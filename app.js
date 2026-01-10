@@ -17,7 +17,7 @@ app.use(bodyParser.json());
 app.use(cors());
 
 app.get("/",(req,res)=>{
-    res.send("This is a Server");
+    res.send("This is a Laxman Server");
 })
 
 // User routes
