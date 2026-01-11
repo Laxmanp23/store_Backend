@@ -40,7 +40,7 @@ app.use("/api/payment", paymentRoutes);
 
 sequelize.sync({ force: false, alter: true })
     .then(() => {
-        app.listen(port, () => {
+        app.listen(port, '0.0.0.0',() => {
             console.log(`Server is running on http://localhost:${port}`);
         })
     })
