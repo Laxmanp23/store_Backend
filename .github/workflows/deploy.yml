@@ -23,5 +23,4 @@ jobs:
             cd /var/www/app/store_Backend
             git pull origin master
             npm install
-            npm run build
             pm2 restart app || pm2 start npm --name "app" -- start
