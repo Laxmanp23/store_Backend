@@ -17,7 +17,7 @@ app.use(bodyParser.json());
 app.use(cors());
 
 app.get("/",(req,res)=>{
-    res.send("This is a Server for Store Management Application backend");
+    res.send("This is a Server for Store Management System for Building Material Store");
 })
 
 // User routes
