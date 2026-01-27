@@ -6,9 +6,16 @@ module.exports = (sequelize, DataTypes) => {
       autoIncrement: true,
       primaryKey: true
     },
-    name: DataTypes.STRING,
-    mobile: DataTypes.STRING,
-    phone: DataTypes.STRING,
-    address: DataTypes.TEXT
+    name: {
+      type: DataTypes.STRING,
+    },
+
+    mobile: {
+      type: DataTypes.STRING,
+    },
+
+    address: {
+      type: DataTypes.TEXT
+    }
   });
 };

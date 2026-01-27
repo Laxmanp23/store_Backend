@@ -8,6 +8,16 @@ module.exports = (sequelize, DataTypes) => {
     },
     name: DataTypes.STRING,
     category: DataTypes.STRING,
-    description: DataTypes.TEXT
+    description: DataTypes.TEXT,
+    costPrice: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      comment: "Base cost price of product"
+    },
+    marginPercent: {
+      type: DataTypes.DECIMAL(5, 2),
+      defaultValue: 20,
+      comment: "Profit margin percentage"
+    }
   });
 };

@@ -3,18 +3,26 @@ const { Stock, Product } = require('../model');
 // Add new stock
 exports.addStock = async (req, res) => {
     try {
-        const { productId, purchasePrice, quantity } = req.body;
+        const { ProductId, purchasePrice, salePrice, quantity } = req.body;
 
         // Validation
-        if (!productId || !purchasePrice || !quantity) {
+        if (!ProductId || !purchasePrice || !salePrice || !quantity) {
             return res.status(400).json({
                 success: false,
-                message: 'Product ID, purchase price, and quantity are required'
+                message: 'Product ID, purchase price, sale price, and quantity are required'
+            });
+        }
+
+        // Validate numbers
+        if (isNaN(purchasePrice) || purchasePrice <= 0 || isNaN(salePrice) || salePrice <= 0 || isNaN(quantity) || quantity <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Purchase price, sale price, and quantity must be positive numbers'
             });
         }
 
         // Check if product exists
-        const product = await Product.findByPk(productId);
+        const product = await Product.findByPk(ProductId);
         if (!product) {
             return res.status(404).json({
                 success: false,
@@ -24,15 +32,18 @@ exports.addStock = async (req, res) => {
 
         // Create stock
         const stock = await Stock.create({
-            ProductId: productId,
-            purchasePrice,
-            quantity,
-            remainingQty: quantity
+            ProductId,
+            purchasePrice: parseFloat(purchasePrice),
+            salePrice: parseFloat(salePrice),
+            quantity: parseInt(quantity)
         });
 
         // Fetch stock with product details
         const stockWithProduct = await Stock.findByPk(stock.id, {
-            include: [{ model: Product, attributes: ['name', 'category'] }]
+            include: [{ 
+                model: Product, 
+                attributes: ['id', 'name', 'category', 'costPrice', 'marginPercent'] 
+            }]
         });
 
         res.status(201).json({
@@ -53,24 +64,27 @@ exports.addStock = async (req, res) => {
 exports.getAllStock = async (req, res) => {
     try {
         const stocks = await Stock.findAll({
-            
             include: [{ 
                 model: Product, 
-                attributes: [ 'name', 'category'] 
-            }]
-            
+                attributes: ['id', 'name', 'category', 'costPrice', 'marginPercent'] 
+            }],
+            order: [['createdAt', 'DESC']]
         });
 
-        // Add total price calculation for each stock
-        const stocksWithTotalPrice = stocks.map(stock => ({
+        // Add calculated fields for each stock
+        const stocksWithDetails = stocks.map(stock => ({
             ...stock.toJSON(),
-            totalPrice: stock.purchasePrice * stock.quantity
+            costValue: stock.purchasePrice * stock.quantity,
+            saleValue: stock.salePrice * stock.quantity,
+            profit: (stock.salePrice - stock.purchasePrice) * stock.quantity,
+            profitMargin: (((stock.salePrice - stock.purchasePrice) / stock.purchasePrice) * 100).toFixed(2)
         }));
 
         res.status(200).json({
             success: true,
             message: 'Stock retrieved successfully',
-            data: stocksWithTotalPrice
+            count: stocks.length,
+            data: stocksWithDetails
         });
     } catch (error) {
         res.status(500).json({
@@ -84,14 +98,24 @@ exports.getAllStock = async (req, res) => {
 // Get stock by product ID
 exports.getStockByProduct = async (req, res) => {
     try {
-        const { productId } = req.params;
+        const { ProductId } = req.params;
+
+        // Check if product exists
+        const product = await Product.findByPk(ProductId);
+        if (!product) {
+            return res.status(404).json({
+                success: false,
+                message: 'Product not found'
+            });
+        }
 
         const stock = await Stock.findAll({
-            where: { ProductId: productId },
+            where: { ProductId },
             include: [{ 
                 model: Product, 
-                attributes: ['id', 'name', 'category'] 
-            }]
+                attributes: ['id', 'name', 'category', 'costPrice', 'marginPercent'] 
+            }],
+            order: [['createdAt', 'DESC']]
         });
 
         if (stock.length === 0) {
@@ -101,10 +125,19 @@ exports.getStockByProduct = async (req, res) => {
             });
         }
 
+        // Add calculated fields
+        const stockWithDetails = stock.map(s => ({
+            ...s.toJSON(),
+            costValue: s.purchasePrice * s.quantity,
+            saleValue: s.salePrice * s.quantity,
+            profit: (s.salePrice - s.purchasePrice) * s.quantity,
+            profitMargin: (((s.salePrice - s.purchasePrice) / s.purchasePrice) * 100).toFixed(2)
+        }));
+
         res.status(200).json({
             success: true,
             message: 'Stock retrieved successfully',
-            data: stock
+            data: stockWithDetails
         });
     } catch (error) {
         res.status(500).json({
@@ -115,18 +148,11 @@ exports.getStockByProduct = async (req, res) => {
     }
 };
 
-// Update stock quantity (when stock is sold)
+// Update stock (Edit prices or quantity)
 exports.updateStock = async (req, res) => {
     try {
         const { id } = req.params;
-        const { quantitySold } = req.body;
-
-        if (!quantitySold) {
-            return res.status(400).json({
-                success: false,
-                message: 'Quantity sold is required'
-            });
-        }
+        const { purchasePrice, salePrice, quantity } = req.body;
 
         const stock = await Stock.findByPk(id);
         if (!stock) {
@@ -136,20 +162,39 @@ exports.updateStock = async (req, res) => {
             });
         }
 
-        if (stock.remainingQty < quantitySold) {
+        // Validate numbers if provided
+        if (purchasePrice && (isNaN(purchasePrice) || purchasePrice <= 0)) {
             return res.status(400).json({
                 success: false,
-                message: 'Insufficient stock available'
+                message: 'Purchase price must be a positive number'
             });
         }
 
-        stock.remainingQty -= quantitySold;
-        await stock.save();
+        if (salePrice && (isNaN(salePrice) || salePrice <= 0)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Sale price must be a positive number'
+            });
+        }
+
+        if (quantity && (isNaN(quantity) || quantity <= 0)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Quantity must be a positive number'
+            });
+        }
+
+        // Update fields
+        await stock.update({
+            purchasePrice: purchasePrice ? parseFloat(purchasePrice) : stock.purchasePrice,
+            salePrice: salePrice ? parseFloat(salePrice) : stock.salePrice,
+            quantity: quantity ? parseInt(quantity) : stock.quantity
+        });
 
         const updatedStock = await Stock.findByPk(id, {
             include: [{ 
                 model: Product, 
-                attributes: ['id', 'name', 'category'] 
+                attributes: ['id', 'name', 'category', 'costPrice', 'marginPercent'] 
             }]
         });
 
@@ -167,35 +212,95 @@ exports.updateStock = async (req, res) => {
     }
 };
 
-// Get stock dashboard summary
-exports.getStockSummary = async (req, res) => {
+// Decrease stock quantity (when sale happens)
+exports.decreaseStockQuantity = async (req, res) => {
     try {
-        const stocks = await Stock.findAll({
+        const { id } = req.params;
+        const { quantitySold } = req.body;
+
+        if (!quantitySold || isNaN(quantitySold) || quantitySold <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Valid quantity sold is required'
+            });
+        }
+
+        const stock = await Stock.findByPk(id);
+        if (!stock) {
+            return res.status(404).json({
+                success: false,
+                message: 'Stock not found'
+            });
+        }
+
+        if (stock.quantity < quantitySold) {
+            return res.status(400).json({
+                success: false,
+                message: `Insufficient stock. Available: ${stock.quantity}, Requested: ${quantitySold}`
+            });
+        }
+
+        // Decrease quantity
+        stock.quantity -= parseInt(quantitySold);
+        await stock.save();
+
+        const updatedStock = await Stock.findByPk(id, {
             include: [{ 
                 model: Product, 
                 attributes: ['id', 'name', 'category'] 
             }]
         });
 
+        res.status(200).json({
+            success: true,
+            message: 'Stock decreased successfully',
+            data: updatedStock
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error decreasing stock',
+            error: error.message
+        });
+    }
+};
+
+// Get stock dashboard summary
+exports.getStockSummary = async (req, res) => {
+    try {
+        const stocks = await Stock.findAll({
+            include: [{ 
+                model: Product, 
+                attributes: ['id', 'name', 'category', 'costPrice', 'marginPercent'] 
+            }],
+            order: [['createdAt', 'DESC']]
+        });
+
         const summary = {
-            totalProducts: stocks.length,
+            totalItems: stocks.length,
             totalQuantity: 0,
-            totalRemainingQty: 0,
-            totalValue: 0,
+            totalCostValue: 0,
+            totalSaleValue: 0,
+            totalPotentialProfit: 0,
             stocks: stocks.map(stock => ({
                 id: stock.id,
+                productId: stock.productId,
                 productName: stock.Product.name,
                 productCategory: stock.Product.category,
                 purchasePrice: stock.purchasePrice,
+                salePrice: stock.salePrice,
                 quantity: stock.quantity,
-                remainingQty: stock.remainingQty,
-                totalValue: stock.purchasePrice * stock.quantity
+                costValue: stock.purchasePrice * stock.quantity,
+                saleValue: stock.salePrice * stock.quantity,
+                potentialProfit: (stock.salePrice - stock.purchasePrice) * stock.quantity,
+                profitMargin: (((stock.salePrice - stock.purchasePrice) / stock.purchasePrice) * 100).toFixed(2)
             }))
         };
 
         summary.totalQuantity = stocks.reduce((sum, s) => sum + s.quantity, 0);
-        summary.totalRemainingQty = stocks.reduce((sum, s) => sum + s.remainingQty, 0);
-        summary.totalValue = stocks.reduce((sum, s) => sum + (s.purchasePrice * s.quantity), 0);
+        summary.totalCostValue = stocks.reduce((sum, s) => sum + (s.purchasePrice * s.quantity), 0);
+        summary.totalSaleValue = stocks.reduce((sum, s) => sum + (s.salePrice * s.quantity), 0);
+        summary.totalPotentialProfit = summary.totalSaleValue - summary.totalCostValue;
 
         res.status(200).json({
             success: true,
@@ -206,6 +311,35 @@ exports.getStockSummary = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error fetching stock summary',
+            error: error.message
+        });
+    }
+};
+
+// Delete stock
+exports.deleteStock = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const stock = await Stock.findByPk(id);
+        if (!stock) {
+            return res.status(404).json({
+                success: false,
+                message: 'Stock not found'
+            });
+        }
+
+        await stock.destroy();
+
+        res.status(200).json({
+            success: true,
+            message: 'Stock deleted successfully',
+            data: stock
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error deleting stock',
             error: error.message
         });
     }

@@ -1,30 +1,41 @@
 // models/Payment.js
 module.exports = (sequelize, DataTypes) => {
-  return sequelize.define("Payment", {
+  const Payment = sequelize.define("Payment", {
     id: {
       type: DataTypes.INTEGER,
       autoIncrement: true,
       primaryKey: true
     },
-    amountPaid: {
+
+    saleId: {
+      type: DataTypes.INTEGER,
+      allowNull: false
+    },
+
+    CustomerId: {
+      type: DataTypes.INTEGER,
+      allowNull: false
+    },
+
+    amount: {
       type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
-      comment: 'Amount paid in this payment'
+      allowNull: false
     },
-    paymentMethod: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      comment: 'Cash, Card, Cheque, Online, etc.'
+
+    paymentMode: {
+      type: DataTypes.ENUM("CASH", "UPI", "BANK", "CARD"),
+      defaultValue: "CASH"
     },
-    notes: {
-      type: DataTypes.TEXT,
-      allowNull: true,
-      comment: 'Additional notes about payment'
+
+    paymentDate: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW
     },
-    transactionId: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      comment: 'Transaction ID for online payments'
+
+    remark: {
+      type: DataTypes.STRING
     }
   });
+
+  return Payment;
 };

@@ -14,7 +14,13 @@ router.get('/summary', stockController.getStockSummary);
 // Get stock by product ID
 router.get('/product/:productId', stockController.getStockByProduct);
 
-// Update stock (when sold)
-router.put('/update/:id', stockController.updateStock);
+// Update stock (Edit prices or quantity)
+router.put('/:id', stockController.updateStock);
+
+// Decrease stock quantity (when sale happens)
+router.put('/:id/decrease', stockController.decreaseStockQuantity);
+
+// Delete stock
+router.delete('/:id', stockController.deleteStock);
 
 module.exports = router;

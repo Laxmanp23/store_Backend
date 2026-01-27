@@ -7,5 +7,6 @@ router.post('/signup', userController.signup);
 
 // User login route
 router.post('/login', userController.login);
+router.put('/updateuser/:id',userController.updateUser);
 
 module.exports = router;

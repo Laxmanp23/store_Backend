@@ -6,26 +6,28 @@ const Product = require("./Product.model")(sequelize, Sequelize);
 const Stock = require("./Stock.model")(sequelize, Sequelize);
 const Customer = require("./Customer.model")(sequelize, Sequelize);
 const Sale = require("./Sale.model")(sequelize, Sequelize);
+const SaleItem = require("./SaleItem.model")(sequelize, Sequelize);
 const Payment = require("./Payment.model")(sequelize, Sequelize);
 
 // Relations
-Product.hasMany(Stock);
-Stock.belongsTo(Product);
+Product.hasMany(Stock, { foreignKey: "ProductId" });
+Stock.belongsTo(Product, { foreignKey: "ProductId" });
 
-Product.hasMany(Sale);
-Sale.belongsTo(Product);
+Customer.hasMany(Sale, { foreignKey: "CustomerId" });
+Sale.belongsTo(Customer, { foreignKey: "CustomerId" });
 
-Customer.hasMany(Sale);
-Sale.belongsTo(Customer);
+Sale.hasMany(SaleItem, { foreignKey: "saleId" });
+SaleItem.belongsTo(Sale, { foreignKey: "saleId" });
 
-Stock.hasMany(Sale);
-Sale.belongsTo(Stock);
+Product.hasMany(SaleItem, { foreignKey: "ProductId" });
+SaleItem.belongsTo(Product, { foreignKey: "ProductId" });
 
-Sale.hasMany(Payment);
-Payment.belongsTo(Sale);
+Sale.hasMany(Payment, { foreignKey: "saleId" });
+Payment.belongsTo(Sale, { foreignKey: "saleId" });
 
-Customer.hasMany(Payment);
-Payment.belongsTo(Customer);
+Customer.hasMany(Payment, { foreignKey: "CustomerId" });
+Payment.belongsTo(Customer, { foreignKey: "CustomerId" });
+
 
 module.exports = {
   sequelize,
@@ -34,5 +36,6 @@ module.exports = {
   Stock,
   Customer,
   Sale,
+  SaleItem,
   Payment
 };

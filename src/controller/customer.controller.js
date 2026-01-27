@@ -3,13 +3,12 @@ const { Customer } = require('../model');
 // Add new customer
 exports.addCustomer = async (req, res) => {
     try {
-        const { name, mobile, phone, address } = req.body;
+        const { name, mobile,  address } = req.body;
 
         // Accept either mobile or phone
-        const phoneNumber = mobile || phone;
 
         // Validation
-        if (!name || !phoneNumber) {
+        if (!name || !mobile) {
             return res.status(400).json({
                 success: false,
                 message: 'Customer name and phone number are required'
@@ -19,7 +18,7 @@ exports.addCustomer = async (req, res) => {
         // Check if customer already exists
         const existingCustomer = await Customer.findOne({ 
             where: { 
-                mobile: phoneNumber 
+                mobile: mobile
             } 
         });
         if (existingCustomer) {
@@ -32,8 +31,7 @@ exports.addCustomer = async (req, res) => {
         // Create customer
         const customer = await Customer.create({
             name,
-            mobile: phoneNumber,
-            phone: phoneNumber,
+            mobile,
             address: address || ''
         });
 

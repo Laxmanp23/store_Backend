@@ -8,10 +8,13 @@ router.post('/add', productController.addProduct);
 // Get all products
 router.get('/all', productController.getAllProducts);
 
-// Delete product (must be before GET /:id)
-router.delete('/:id', productController.deleteProduct);
-
-// Get product by ID
+// Get product by ID (must be after specific routes)
 router.get('/:id', productController.getProductById);
+
+// Update product
+router.put('/:id', productController.updateProduct);
+
+// Delete product
+router.delete('/:id', productController.deleteProduct);
 
 module.exports = router;
