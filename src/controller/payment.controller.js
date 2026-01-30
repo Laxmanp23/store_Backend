@@ -151,10 +151,10 @@ exports.getPaymentHistoryForSale = async (req, res) => {
 // Get payment history for a customer (Payment Ledger)
 exports.getPaymentLedgerForCustomer = async (req, res) => {
     try {
-        const { CustomerId } = req.params;
+        const { customerId } = req.params;
 
         // Check if customer exists
-        const customer = await Customer.findByPk(CustomerId);
+        const customer = await Customer.findByPk(customerId);
         if (!customer) {
             return res.status(404).json({
                 success: false,
@@ -164,36 +164,56 @@ exports.getPaymentLedgerForCustomer = async (req, res) => {
 
         // Get all sales for customer
         const sales = await Sale.findAll({
-            where: { CustomerId },
-            order: [['invoiceDate', 'DESC']]
+            where: { CustomerId: customerId },
+            include: [{
+                model: Payment,
+                attributes: ['id', 'amount', 'paymentMode', 'paymentDate', 'remark']
+            }],
+            order: [['invoiceDate', 'ASC']] // Oldest first for proper ledger
         });
 
-        // Build ledger
+        // Build ledger with proper entries
         const ledger = [];
         let runningBalance = 0;
 
         for (const sale of sales) {
-            const payments = await Payment.findAll({
-                where: { saleId: sale.id },
-                order: [['paymentDate', 'DESC']]
-            });
-
+            // Add sale entry (Debit - customer owes money)
+            runningBalance += parseFloat(sale.totalAmount);
             ledger.push({
-                invoiceNumber: sale.invoiceNumber,
                 date: sale.invoiceDate,
-                debit: sale.totalAmount,
-                credit: sale.totalPaid,
-                balance: sale.totalAmount - sale.totalPaid,
-                status: sale.paymentStatus,
-                payments: payments.map(p => ({
-                    paymentDate: p.paymentDate,
-                    amount: p.amount,
-                    mode: p.paymentMode
-                }))
+                referenceId: sale.invoiceNumber,
+                type: 'SALE',
+                description: `Invoice ${sale.invoiceNumber}`,
+                debit: parseFloat(sale.totalAmount),
+                credit: 0,
+                balance: runningBalance
             });
 
-            runningBalance += (sale.totalAmount - sale.totalPaid);
+            // Add payment entries (Credit - customer paid)
+            const payments = sale.Payments || [];
+            for (const payment of payments) {
+                runningBalance -= parseFloat(payment.amount);
+                ledger.push({
+                    date: payment.paymentDate,
+                    referenceId: `PAY-${payment.id}`,
+                    type: 'PAYMENT',
+                    description: `${payment.paymentMode} - ${payment.remark || 'Payment received'}`,
+                    debit: 0,
+                    credit: parseFloat(payment.amount),
+                    balance: runningBalance
+                });
+            }
         }
+
+        // Sort ledger by date
+        ledger.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // Recalculate running balance after sort
+        let balance = 0;
+        ledger.forEach(entry => {
+            balance += entry.debit - entry.credit;
+            entry.balance = balance;
+        });
 
         // Summary
         const totalSales = sales.reduce((sum, s) => sum + parseFloat(s.totalAmount), 0);
@@ -215,7 +235,7 @@ exports.getPaymentLedgerForCustomer = async (req, res) => {
                 totalOutstanding,
                 invoiceCount: sales.length
             },
-            ledger
+            data: ledger
         });
     } catch (error) {
         res.status(500).json({

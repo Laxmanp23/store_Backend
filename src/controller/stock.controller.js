@@ -35,6 +35,7 @@ exports.addStock = async (req, res) => {
             ProductId,
             purchasePrice: parseFloat(purchasePrice),
             salePrice: parseFloat(salePrice),
+            originalQuantity: parseInt(quantity),
             quantity: parseInt(quantity)
         });
 
@@ -74,6 +75,7 @@ exports.getAllStock = async (req, res) => {
         // Add calculated fields for each stock
         const stocksWithDetails = stocks.map(stock => ({
             ...stock.toJSON(),
+            soldQuantity: (stock.originalQuantity || stock.quantity) - stock.quantity,
             costValue: stock.purchasePrice * stock.quantity,
             saleValue: stock.salePrice * stock.quantity,
             profit: (stock.salePrice - stock.purchasePrice) * stock.quantity,

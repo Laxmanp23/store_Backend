@@ -20,9 +20,15 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       comment: "Calculated from margin or manual"
     },
+    originalQuantity: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      comment: "Original quantity when batch was added - never changes"
+    },
     quantity: {
       type: DataTypes.INTEGER,
-      allowNull: false
+      allowNull: false,
+      comment: "Current available quantity - decreases on sales"
     }
   });
 };

@@ -13,6 +13,8 @@ const stockRoutes = require("./src/routes/stock.routes");
 const saleRoutes = require("./src/routes/sale.routes");
 const paymentRoutes = require("./src/routes/payment.routes");
 
+app.use(express.json());
+
 app.use(bodyParser.json());
 app.use(cors());
 

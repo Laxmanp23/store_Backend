@@ -4,7 +4,7 @@ const { Op } = require('sequelize');
 // Create new sale
 exports.createSale = async (req, res) => {
     try {
-        const { CustomerId, invoiceNumber, items, note } = req.body;
+        const { CustomerId, invoiceNumber, items, note, initialPayment, paymentMode } = req.body;
 
         // Validation
         if (!CustomerId || !invoiceNumber || !items || items.length === 0) {
@@ -55,16 +55,21 @@ exports.createSale = async (req, res) => {
                 });
             }
 
-            // Check stock availability
-            const stockRecord = await Stock.findOne({
-                where: { ProductId },
-                order: [['createdAt', 'ASC']]
+            // Check stock availability - sum of ALL batches for this product
+            const stockRecords = await Stock.findAll({
+                where: { 
+                    ProductId,
+                    quantity: { [Op.gt]: 0 } // Only batches with stock > 0
+                },
+                order: [['createdAt', 'ASC']] // FIFO - oldest first
             });
 
-            if (!stockRecord || stockRecord.quantity < quantity) {
+            const totalAvailableStock = stockRecords.reduce((sum, s) => sum + s.quantity, 0);
+
+            if (totalAvailableStock < quantity) {
                 return res.status(400).json({
                     success: false,
-                    message: `Insufficient stock for product ${product.name}. Available: ${stockRecord ? stockRecord.quantity : 0}, Required: ${quantity}`
+                    message: `Insufficient stock for product ${product.name}. Available: ${totalAvailableStock}, Required: ${quantity}`
                 });
             }
 
@@ -79,17 +84,40 @@ exports.createSale = async (req, res) => {
             });
         }
 
+        // Validate initial payment if provided
+        const paymentAmount = parseFloat(initialPayment) || 0;
+        if (paymentAmount < 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Payment amount cannot be negative'
+            });
+        }
+        if (paymentAmount > totalAmount) {
+            return res.status(400).json({
+                success: false,
+                message: 'Payment amount cannot exceed total amount'
+            });
+        }
+
+        // Determine payment status
+        let paymentStatus = 'PENDING';
+        if (paymentAmount >= totalAmount) {
+            paymentStatus = 'PAID';
+        } else if (paymentAmount > 0) {
+            paymentStatus = 'PARTIAL';
+        }
+
         // Create sale
         const sale = await Sale.create({
             CustomerId,
             invoiceNumber,
             totalAmount: parseFloat(totalAmount),
-            totalPaid: 0,
-            paymentStatus: 'PENDING',
+            totalPaid: paymentAmount,
+            paymentStatus,
             note: note || null
         });
 
-        // Create sale items and update stock
+        // Create sale items and update stock (FIFO - oldest batch first)
         for (const item of validatedItems) {
             // Create sale item
             await SaleItem.create({
@@ -100,10 +128,35 @@ exports.createSale = async (req, res) => {
                 totalPrice: item.totalPrice
             });
 
-            // Decrease stock
-            const stock = await Stock.findOne({ where: { ProductId: item.ProductId } });
-            stock.quantity -= item.quantity;
-            await stock.save();
+            // Decrease stock using FIFO (oldest batch first)
+            let remainingQty = item.quantity;
+            const stockBatches = await Stock.findAll({
+                where: { 
+                    ProductId: item.ProductId,
+                    quantity: { [Op.gt]: 0 }
+                },
+                order: [['createdAt', 'ASC']] // Oldest first
+            });
+
+            for (const batch of stockBatches) {
+                if (remainingQty <= 0) break;
+                
+                const deductQty = Math.min(batch.quantity, remainingQty);
+                batch.quantity -= deductQty;
+                await batch.save();
+                remainingQty -= deductQty;
+            }
+        }
+
+        // Create payment record if initial payment was made
+        if (paymentAmount > 0) {
+            await Payment.create({
+                saleId: sale.id,
+                CustomerId,
+                amount: paymentAmount,
+                paymentMode: paymentMode || 'CASH',
+                remark: 'Initial payment at sale'
+            });
         }
 
         // Fetch complete sale details
@@ -127,7 +180,9 @@ exports.createSale = async (req, res) => {
 
         res.status(201).json({
             success: true,
-            message: 'Sale created successfully',
+            message: paymentAmount > 0 
+                ? `Sale created with initial payment of ₹${paymentAmount.toFixed(2)}`
+                : 'Sale created successfully',
             data: {
                 ...saleDetails.toJSON(),
                 remainingBalance: saleDetails.totalAmount - saleDetails.totalPaid

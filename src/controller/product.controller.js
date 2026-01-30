@@ -1,57 +1,56 @@
 const { Product, Stock } = require('../model');
 
-// Add new product
+
+//add product
 exports.addProduct = async (req, res) => {
     try {
         const { name, category, description, costPrice, marginPercent } = req.body;
 
-        // Validation
-        if (!name || !category || !costPrice) {
+        if (!name, !category, !description, !costPrice, !marginPercent) {
             return res.status(400).json({
                 success: false,
-                message: 'Product name, category, and costPrice are required'
+                message: "ProductName, Category, CostPrice, MarginPrice are required!"
             });
-        }
+        };
 
-        // Validate costPrice is positive
-        if (isNaN(costPrice) || costPrice <= 0) {
+        if (Number.isNaN(costPrice) || costPrice <= 0) {
             return res.status(400).json({
                 success: false,
-                message: 'Cost price must be a positive number'
-            });
+                message: " Cost Price must be a Positive Number"
+            })
+
         }
 
-        // Check if product already exists
         const existingProduct = await Product.findOne({ where: { name } });
         if (existingProduct) {
             return res.status(400).json({
                 success: false,
-                message: 'Product already exists'
-            });
+                message: "Product already Exist"
+
+            })
         }
 
-        // Create product
         const product = await Product.create({
             name,
             category,
-            description: description || '',
+            description,
             costPrice: parseFloat(costPrice),
-            marginPercent: marginPercent ? parseFloat(marginPercent) : 20  // Default 20% margin
-        });
+            marginPercent: marginPercent ? parseFloat(marginPercent) : 20,
+        })
 
-        res.status(201).json({
+        res.status(200).json({
             success: true,
-            message: 'Product added successfully',
-            data: product
-        });
+            message: "Product Created!",
+            product
+        })
+
     } catch (error) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
-            message: 'Error adding product',
-            error: error.message
-        });
+            message: "Internal Server Error"
+        })
     }
-};
+}
 
 // Get all products
 exports.getAllProducts = async (req, res) => {
