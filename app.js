@@ -12,6 +12,7 @@ const customerRoutes = require("./src/routes/customer.routes");
 const stockRoutes = require("./src/routes/stock.routes");
 const saleRoutes = require("./src/routes/sale.routes");
 const paymentRoutes = require("./src/routes/payment.routes");
+const vendorRoutes = require("./src/routes/vendor.routes");
 
 app.use(express.json());
 
@@ -39,6 +40,9 @@ app.use("/api/sale", saleRoutes);
 
 // Payment routes
 app.use("/api/payment", paymentRoutes);
+
+// Vendor routes
+app.use("/api/vendor", vendorRoutes);
 
 sequelize.sync({ force: false, alter: false })
     .then(() => {

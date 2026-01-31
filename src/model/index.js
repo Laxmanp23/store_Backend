@@ -8,6 +8,9 @@ const Customer = require("./Customer.model")(sequelize, Sequelize);
 const Sale = require("./Sale.model")(sequelize, Sequelize);
 const SaleItem = require("./SaleItem.model")(sequelize, Sequelize);
 const Payment = require("./Payment.model")(sequelize, Sequelize);
+const Vendor = require("./Vendor.model")(sequelize, Sequelize);
+const Purchase = require("./Purchase.model")(sequelize, Sequelize);
+const PurchaseItem = require("./PurchaseItem.model")(sequelize, Sequelize);
 
 // Relations
 Product.hasMany(Stock, { foreignKey: "ProductId" });
@@ -28,6 +31,16 @@ Payment.belongsTo(Sale, { foreignKey: "saleId" });
 Customer.hasMany(Payment, { foreignKey: "CustomerId" });
 Payment.belongsTo(Customer, { foreignKey: "CustomerId" });
 
+// Vendor Relations
+Vendor.hasMany(Purchase, { foreignKey: "VendorId" });
+Purchase.belongsTo(Vendor, { foreignKey: "VendorId" });
+
+Purchase.hasMany(PurchaseItem, { foreignKey: "purchaseId" });
+PurchaseItem.belongsTo(Purchase, { foreignKey: "purchaseId" });
+
+Product.hasMany(PurchaseItem, { foreignKey: "ProductId" });
+PurchaseItem.belongsTo(Product, { foreignKey: "ProductId" });
+
 
 module.exports = {
   sequelize,
@@ -37,5 +50,8 @@ module.exports = {
   Customer,
   Sale,
   SaleItem,
-  Payment
+  Payment,
+  Vendor,
+  Purchase,
+  PurchaseItem
 };

@@ -182,11 +182,15 @@ exports.getPaymentLedgerForCustomer = async (req, res) => {
             ledger.push({
                 date: sale.invoiceDate,
                 referenceId: sale.invoiceNumber,
+                saleId: sale.id,
                 type: 'SALE',
                 description: `Invoice ${sale.invoiceNumber}`,
                 debit: parseFloat(sale.totalAmount),
                 credit: 0,
-                balance: runningBalance
+                balance: runningBalance,
+                totalAmount: parseFloat(sale.totalAmount),
+                totalPaid: parseFloat(sale.totalPaid),
+                dueAmount: parseFloat(sale.totalAmount) - parseFloat(sale.totalPaid)
             });
 
             // Add payment entries (Credit - customer paid)
@@ -196,8 +200,10 @@ exports.getPaymentLedgerForCustomer = async (req, res) => {
                 ledger.push({
                     date: payment.paymentDate,
                     referenceId: `PAY-${payment.id}`,
+                    saleId: sale.id,
                     type: 'PAYMENT',
                     description: `${payment.paymentMode} - ${payment.remark || 'Payment received'}`,
+                    remark: payment.remark,
                     debit: 0,
                     credit: parseFloat(payment.amount),
                     balance: runningBalance
