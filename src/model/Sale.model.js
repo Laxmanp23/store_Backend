@@ -14,8 +14,8 @@ module.exports = (sequelize, DataTypes) => {
 
     invoiceNumber: {
       type: DataTypes.STRING,
-      unique: true,
-      allowNull: false
+      allowNull: false,
+      comment: "Invoice number (can be auto-generated)"
     },
 
     totalAmount: {
@@ -51,6 +51,14 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW
     }
+  }, {
+    indexes: [
+      { fields: ['invoiceNumber'], unique: true },
+      { fields: ['CustomerId'] },
+      { fields: ['paymentStatus'] },
+      { fields: ['invoiceDate'] },
+      { fields: ['createdAt'] }
+    ]
   });
 
   return Sale;

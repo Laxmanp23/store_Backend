@@ -5,9 +5,6 @@ exports.addCustomer = async (req, res) => {
     try {
         const { name, mobile,  address } = req.body;
 
-        // Accept either mobile or phone
-
-        // Validation
         if (!name || !mobile) {
             return res.status(400).json({
                 success: false,
@@ -49,15 +46,54 @@ exports.addCustomer = async (req, res) => {
     }
 };
 
-// Get all customers
+// Get all customers with pagination
 exports.getAllCustomers = async (req, res) => {
     try {
-        const customers = await Customer.findAll();
+        const { page = 1, limit = 50, search = '', all = false } = req.query;
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+
+        // If all=true, return all customers (for dropdowns)
+        if (all === 'true' || all === true) {
+            const customers = await Customer.findAll({
+                order: [['name', 'ASC']]
+            });
+            return res.status(200).json({
+                success: true,
+                message: 'All customers retrieved successfully',
+                data: customers
+            });
+        }
+
+        // Build where clause for search
+        const whereClause = search ? {
+            [require('sequelize').Op.or]: [
+                { name: { [require('sequelize').Op.like]: `%${search}%` } },
+                { mobile: { [require('sequelize').Op.like]: `%${search}%` } }
+            ]
+        } : {};
+
+        const { count, rows: customers } = await Customer.findAndCountAll({
+            where: whereClause,
+            limit: parseInt(limit),
+            offset: offset,
+            order: [['createdAt', 'DESC']]
+        });
+
+        const totalPages = Math.ceil(count / parseInt(limit));
+        const currentPage = parseInt(page);
 
         res.status(200).json({
             success: true,
             message: 'Customers retrieved successfully',
-            data: customers
+            data: customers,
+            pagination: {
+                currentPage: currentPage,
+                totalPages: totalPages,
+                totalItems: count,
+                itemsPerPage: parseInt(limit),
+                hasNextPage: currentPage < totalPages,
+                hasPrevPage: currentPage > 1
+            }
         });
     } catch (error) {
         res.status(500).json({

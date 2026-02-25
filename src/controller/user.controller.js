@@ -36,7 +36,7 @@ exports.signup = async (req, res) => {
             password: user.password
         },
             process.env.JWT_SECRET,
-            { expiresIn: 24 }
+            { expiresIn: '24h' }
         );
         res.status(201).json({
             success: true,
@@ -85,12 +85,19 @@ exports.login = async (req, res) => {
             password: findUser.password
         },
             process.env.JWT_SECRET,
-            { expiresIn: 24 }
+            { expiresIn: '24h' }
         )
         res.status(200).json({
             success: true,
             message: "Login successfully",
             token,
+            user: {
+                id: findUser.id,
+                name: findUser.username,
+                username: findUser.username,
+                email: findUser.email
+            },
+            // Keep findUser for backward compatibility
             findUser: {
                 username: findUser.username,
                 email: findUser.email

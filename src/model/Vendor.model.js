@@ -25,5 +25,11 @@ module.exports = (sequelize, DataTypes) => {
     companyName: {
       type: DataTypes.STRING,
     }
+  }, {
+    indexes: [
+      { fields: ['mobile'] },
+      { fields: ['name'] },
+      { fields: ['companyName'] }
+    ]
   });
 };

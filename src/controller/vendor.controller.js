@@ -51,14 +51,57 @@ exports.addVendor = async (req, res) => {
 // Get all vendors
 exports.getAllVendors = async (req, res) => {
     try {
-        const vendors = await Vendor.findAll({
-            order: [['createdAt', 'DESC']]
+        const { page = 1, limit = 50, search, all } = req.query;
+        
+        // If all=true, return all vendors without pagination (for dropdowns)
+        if (all === 'true') {
+            const vendors = await Vendor.findAll({
+                order: [['createdAt', 'DESC']]
+            });
+            return res.status(200).json({
+                success: true,
+                message: 'Vendors retrieved successfully',
+                data: vendors
+            });
+        }
+
+        const pageNum = parseInt(page);
+        const limitNum = parseInt(limit);
+        const offset = (pageNum - 1) * limitNum;
+
+        let whereClause = {};
+
+        // Search filter
+        if (search) {
+            const { Op } = require('sequelize');
+            whereClause = {
+                [Op.or]: [
+                    { name: { [Op.like]: `%${search}%` } },
+                    { mobile: { [Op.like]: `%${search}%` } },
+                    { companyName: { [Op.like]: `%${search}%` } }
+                ]
+            };
+        }
+
+        const { count, rows: vendors } = await Vendor.findAndCountAll({
+            where: whereClause,
+            order: [['createdAt', 'DESC']],
+            limit: limitNum,
+            offset: offset
         });
 
         res.status(200).json({
             success: true,
             message: 'Vendors retrieved successfully',
-            data: vendors
+            data: vendors,
+            pagination: {
+                currentPage: pageNum,
+                totalPages: Math.ceil(count / limitNum),
+                totalItems: count,
+                itemsPerPage: limitNum,
+                hasNextPage: pageNum < Math.ceil(count / limitNum),
+                hasPrevPage: pageNum > 1
+            }
         });
     } catch (error) {
         res.status(500).json({

@@ -1,8 +1,10 @@
-const { Sale, Payment, Customer, Product } = require('../model');
+const { Sale, Payment, Customer, Product, sequelize } = require('../model');
 const { Op } = require('sequelize');
 
 // Record payment
 exports.recordPayment = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    
     try {
         const { saleId, amount, paymentMode, remark } = req.body;
 
@@ -22,7 +24,9 @@ exports.recordPayment = async (req, res) => {
         }
 
         // Check if sale exists
-        const sale = await Sale.findByPk(saleId);
+        const sale = await Sale.findByPk(saleId, {
+            include: [{ model: Payment, attributes: ['amount'] }]
+        });
         if (!sale) {
             return res.status(404).json({
                 success: false,
@@ -30,8 +34,11 @@ exports.recordPayment = async (req, res) => {
             });
         }
 
+        // Calculate actual paid from Payment records
+        const actualPaid = (sale.Payments || []).reduce((sum, p) => sum + parseFloat(p.amount), 0);
+        const remainingBalance = parseFloat(sale.totalAmount) - actualPaid;
+        
         // Check if payment amount exceeds remaining balance
-        const remainingBalance = sale.totalAmount - sale.totalPaid;
         if (amount > remainingBalance) {
             return res.status(400).json({
                 success: false,
@@ -46,10 +53,10 @@ exports.recordPayment = async (req, res) => {
             amount: parseFloat(amount),
             paymentMode,
             remark: remark || null
-        });
+        }, { transaction });
 
         // Update sale totalPaid and paymentStatus
-        const newTotalPaid = parseFloat(sale.totalPaid) + parseFloat(amount);
+        const newTotalPaid = actualPaid + parseFloat(amount);
         let paymentStatus = 'PENDING';
 
         if (newTotalPaid >= sale.totalAmount) {
@@ -61,7 +68,9 @@ exports.recordPayment = async (req, res) => {
         await sale.update({
             totalPaid: newTotalPaid,
             paymentStatus
-        });
+        }, { transaction });
+
+        await transaction.commit();
 
         // Fetch payment with details
         const paymentDetails = await Payment.findByPk(payment.id, {
@@ -91,6 +100,7 @@ exports.recordPayment = async (req, res) => {
             }
         });
     } catch (error) {
+        await transaction.rollback();
         res.status(500).json({
             success: false,
             message: 'Error recording payment',
@@ -177,6 +187,11 @@ exports.getPaymentLedgerForCustomer = async (req, res) => {
         let runningBalance = 0;
 
         for (const sale of sales) {
+            // Calculate actual paid from payments
+            const payments = sale.Payments || [];
+            const actualPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+            const dueAmount = parseFloat(sale.totalAmount) - actualPaid;
+
             // Add sale entry (Debit - customer owes money)
             runningBalance += parseFloat(sale.totalAmount);
             ledger.push({
@@ -189,12 +204,11 @@ exports.getPaymentLedgerForCustomer = async (req, res) => {
                 credit: 0,
                 balance: runningBalance,
                 totalAmount: parseFloat(sale.totalAmount),
-                totalPaid: parseFloat(sale.totalPaid),
-                dueAmount: parseFloat(sale.totalAmount) - parseFloat(sale.totalPaid)
+                totalPaid: actualPaid,
+                dueAmount: dueAmount
             });
 
             // Add payment entries (Credit - customer paid)
-            const payments = sale.Payments || [];
             for (const payment of payments) {
                 runningBalance -= parseFloat(payment.amount);
                 ledger.push({
@@ -221,9 +235,9 @@ exports.getPaymentLedgerForCustomer = async (req, res) => {
             entry.balance = balance;
         });
 
-        // Summary
-        const totalSales = sales.reduce((sum, s) => sum + parseFloat(s.totalAmount), 0);
-        const totalPaid = sales.reduce((sum, s) => sum + parseFloat(s.totalPaid), 0);
+        // Summary - calculate from actual ledger entries
+        const totalSales = ledger.reduce((sum, entry) => sum + entry.debit, 0);
+        const totalPaid = ledger.reduce((sum, entry) => sum + entry.credit, 0);
         const totalOutstanding = totalSales - totalPaid;
 
         res.status(200).json({
@@ -252,10 +266,38 @@ exports.getPaymentLedgerForCustomer = async (req, res) => {
     }
 };
 
-// Get all payments (Admin view)
+// Get all payments (Admin view) - with pagination
 exports.getAllPayments = async (req, res) => {
     try {
-        const payments = await Payment.findAll({
+        const { page = 1, limit = 50, mode = '', all = false } = req.query;
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+
+        // Build where clause
+        let whereClause = {};
+        if (mode && ['CASH', 'UPI', 'BANK', 'CARD'].includes(mode)) {
+            whereClause.paymentMode = mode;
+        }
+
+        // If all=true, return all for reports
+        if (all === 'true' || all === true) {
+            const payments = await Payment.findAll({
+                include: [
+                    { model: Sale, attributes: ['id', 'invoiceNumber', 'totalAmount'] },
+                    { model: Customer, attributes: ['id', 'name', 'mobile'] }
+                ],
+                order: [['paymentDate', 'DESC']]
+            });
+            const totalCollected = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+            return res.status(200).json({
+                success: true,
+                message: 'All payments retrieved successfully',
+                summary: { totalPayments: payments.length, totalCollected },
+                data: payments
+            });
+        }
+
+        const { count, rows: payments } = await Payment.findAndCountAll({
+            where: whereClause,
             include: [
                 { 
                     model: Sale, 
@@ -266,19 +308,32 @@ exports.getAllPayments = async (req, res) => {
                     attributes: ['id', 'name', 'mobile'] 
                 }
             ],
-            order: [['paymentDate', 'DESC']]
+            order: [['paymentDate', 'DESC']],
+            limit: parseInt(limit),
+            offset: offset,
+            distinct: true
         });
 
         const totalCollected = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+        const totalPages = Math.ceil(count / parseInt(limit));
+        const currentPage = parseInt(page);
 
         res.status(200).json({
             success: true,
             message: 'All payments retrieved successfully',
             summary: {
-                totalPayments: payments.length,
+                totalPayments: count,
                 totalCollected
             },
-            data: payments
+            data: payments,
+            pagination: {
+                currentPage: currentPage,
+                totalPages: totalPages,
+                totalItems: count,
+                itemsPerPage: parseInt(limit),
+                hasNextPage: currentPage < totalPages,
+                hasPrevPage: currentPage > 1
+            }
         });
     } catch (error) {
         res.status(500).json({
@@ -356,31 +411,38 @@ exports.getPaymentsByDateRange = async (req, res) => {
 exports.getOutstandingPayments = async (req, res) => {
     try {
         const sales = await Sale.findAll({
-            where: {
-                paymentStatus: {
-                    [Op.ne]: 'COMPLETED'
-                }
-            },
             include: [
                 { 
                     model: Customer, 
                     attributes: ['id', 'name', 'mobile'] 
+                },
+                {
+                    model: Payment,
+                    attributes: ['id', 'amount']
                 }
             ],
             order: [['invoiceDate', 'DESC']]
         });
 
-        const outstanding = sales.map(s => ({
-            invoiceNumber: s.invoiceNumber,
-            customerName: s.Customer.name,
-            customerMobile: s.Customer.mobile,
-            saleDate: s.invoiceDate,
-            totalAmount: s.totalAmount,
-            paidAmount: s.totalPaid,
-            outstandingAmount: s.totalAmount - s.totalPaid,
-            status: s.paymentStatus,
-            daysOverdue: Math.floor((new Date() - new Date(s.invoiceDate)) / (1000 * 60 * 60 * 24))
-        }));
+        // Filter and calculate from actual Payment records
+        const outstanding = sales
+            .map(s => {
+                const actualPaid = (s.Payments || []).reduce((sum, p) => sum + parseFloat(p.amount), 0);
+                const outstandingAmount = parseFloat(s.totalAmount) - actualPaid;
+                return {
+                    saleId: s.id,
+                    invoiceNumber: s.invoiceNumber,
+                    customerName: s.Customer?.name || 'Unknown',
+                    customerMobile: s.Customer?.mobile || '',
+                    saleDate: s.invoiceDate,
+                    totalAmount: s.totalAmount,
+                    paidAmount: actualPaid,
+                    outstandingAmount: outstandingAmount,
+                    status: outstandingAmount <= 0 ? 'COMPLETED' : (actualPaid > 0 ? 'PARTIAL' : 'PENDING'),
+                    daysOverdue: Math.floor((new Date() - new Date(s.invoiceDate)) / (1000 * 60 * 60 * 24))
+                };
+            })
+            .filter(o => o.outstandingAmount > 0);
 
         const totalOutstanding = outstanding.reduce((sum, o) => sum + parseFloat(o.outstandingAmount), 0);
 

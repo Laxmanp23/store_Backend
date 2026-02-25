@@ -1,11 +1,11 @@
-const { Stock, Product } = require('../model');
+const { Stock, Product, Vendor, Purchase, Category } = require('../model');
 
 // Add new stock
 exports.addStock = async (req, res) => {
     try {
-        const { ProductId, purchasePrice, salePrice, quantity } = req.body;
+        const { ProductId, purchasePrice, salePrice, quantity, VendorId, PurchaseId, batchNumber, expiryDate } = req.body;
 
-        // Validation
+        // Validation - Required fields
         if (!ProductId || !purchasePrice || !salePrice || !quantity) {
             return res.status(400).json({
                 success: false,
@@ -21,6 +21,14 @@ exports.addStock = async (req, res) => {
             });
         }
 
+        // Validate that sale price is greater than purchase price
+        if (parseFloat(salePrice) <= parseFloat(purchasePrice)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Sale Price must be greater than Purchase Price'
+            });
+        }
+
         // Check if product exists
         const product = await Product.findByPk(ProductId);
         if (!product) {
@@ -30,27 +38,69 @@ exports.addStock = async (req, res) => {
             });
         }
 
-        // Create stock
+        // If VendorId provided, validate vendor exists
+        if (VendorId) {
+            const vendor = await Vendor.findByPk(VendorId);
+            if (!vendor) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Vendor not found'
+                });
+            }
+        }
+
+        // If PurchaseId provided, validate purchase exists
+        if (PurchaseId) {
+            const purchase = await Purchase.findByPk(PurchaseId);
+            if (!purchase) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Purchase not found'
+                });
+            }
+        }
+
+        // Create stock with vendor and batch information
         const stock = await Stock.create({
             ProductId,
+            VendorId: VendorId || null,
+            PurchaseId: PurchaseId || null,
             purchasePrice: parseFloat(purchasePrice),
             salePrice: parseFloat(salePrice),
             originalQuantity: parseInt(quantity),
-            quantity: parseInt(quantity)
+            quantity: parseInt(quantity),
+            batchNumber: batchNumber || null,
+            expiryDate: expiryDate ? new Date(expiryDate) : null
         });
 
-        // Fetch stock with product details
-        const stockWithProduct = await Stock.findByPk(stock.id, {
-            include: [{ 
-                model: Product, 
-                attributes: ['id', 'name', 'category', 'costPrice', 'marginPercent'] 
-            }]
+        // Fetch stock with product and vendor details
+        const stockWithDetails = await Stock.findByPk(stock.id, {
+            include: [
+                { 
+                    model: Product, 
+                    attributes: ['id', 'name', 'CategoryId', 'costPrice', 'marginPercent'],
+                    include: [{
+                        model: Category,
+                        attributes: ['id', 'name']
+                    }]
+                },
+                {
+                    model: Vendor,
+                    attributes: ['id', 'name', 'mobile', 'companyName'],
+                    required: false
+                },
+                {
+                    model: Purchase,
+                    attributes: ['id', 'invoiceNumber', 'purchaseDate'],
+                    required: false
+                }
+            ]
         });
 
         res.status(201).json({
             success: true,
             message: 'Stock added successfully',
-            data: stockWithProduct
+            data: stockWithDetails
         });
     } catch (error) {
         res.status(500).json({
@@ -61,32 +111,115 @@ exports.addStock = async (req, res) => {
     }
 };
 
-// Get all stock with product details (Dashboard)
+// Get all stock with product details (Dashboard) - with pagination
 exports.getAllStock = async (req, res) => {
     try {
-        const stocks = await Stock.findAll({
-            include: [{ 
-                model: Product, 
-                attributes: ['id', 'name', 'category', 'costPrice', 'marginPercent'] 
-            }],
-            order: [['createdAt', 'DESC']]
+        const { page = 1, limit = 50, search = '', lowStock = false, all = false } = req.query;
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const { Op } = require('sequelize');
+
+        // Build where clause
+        let whereClause = {};
+        
+        // Filter low stock (quantity <= 10)
+        if (lowStock === 'true' || lowStock === true) {
+            whereClause.quantity = { [Op.lte]: 10, [Op.gt]: 0 };
+        }
+
+        // If all=true, return all stocks (for calculations/reports)
+        if (all === 'true' || all === true) {
+            const stocks = await Stock.findAll({
+                include: [
+                    { 
+                        model: Product, 
+                        attributes: ['id', 'name', 'CategoryId', 'costPrice', 'marginPercent'],
+                        include: [{
+                            model: Category,
+                            attributes: ['id', 'name']
+                        }]
+                    },
+                    {
+                        model: Vendor,
+                        attributes: ['id', 'name', 'companyName'],
+                        required: false
+                    }
+                ],
+                order: [['createdAt', 'DESC']]
+            });
+
+            const stocksWithDetails = stocks.map(stock => ({
+                ...stock.toJSON(),
+                vendorName: stock.Vendor ? stock.Vendor.name : 'Not assigned',
+                soldQuantity: (parseFloat(stock.originalQuantity) || parseFloat(stock.quantity)) - parseFloat(stock.quantity),
+                costValue: parseFloat(stock.purchasePrice) * parseFloat(stock.quantity),
+                saleValue: parseFloat(stock.salePrice) * parseFloat(stock.quantity)
+            }));
+
+            return res.status(200).json({
+                success: true,
+                message: 'All stock retrieved successfully',
+                count: stocks.length,
+                data: stocksWithDetails
+            });
+        }
+
+        const { count, rows: stocks } = await Stock.findAndCountAll({
+            where: whereClause,
+            include: [
+                { 
+                    model: Product, 
+                    attributes: ['id', 'name', 'CategoryId', 'costPrice', 'marginPercent'],
+                    include: [{
+                        model: Category,
+                        attributes: ['id', 'name']
+                    }]
+                },
+                {
+                    model: Vendor,
+                    attributes: ['id', 'name', 'companyName'],
+                    required: false
+                },
+                {
+                    model: Purchase,
+                    attributes: ['id', 'invoiceNumber'],
+                    required: false
+                }
+            ],
+            order: [['createdAt', 'DESC']],
+            limit: parseInt(limit),
+            offset: offset,
+            distinct: true
         });
 
         // Add calculated fields for each stock
         const stocksWithDetails = stocks.map(stock => ({
             ...stock.toJSON(),
-            soldQuantity: (stock.originalQuantity || stock.quantity) - stock.quantity,
-            costValue: stock.purchasePrice * stock.quantity,
-            saleValue: stock.salePrice * stock.quantity,
-            profit: (stock.salePrice - stock.purchasePrice) * stock.quantity,
-            profitMargin: (((stock.salePrice - stock.purchasePrice) / stock.purchasePrice) * 100).toFixed(2)
+            vendorName: stock.Vendor ? stock.Vendor.name : 'Not assigned',
+            purchaseInvoice: stock.Purchase ? stock.Purchase.invoiceNumber : 'Not assigned',
+            soldQuantity: (parseFloat(stock.originalQuantity) || parseFloat(stock.quantity)) - parseFloat(stock.quantity),
+            costValue: parseFloat(stock.purchasePrice) * parseFloat(stock.quantity),
+            saleValue: parseFloat(stock.salePrice) * parseFloat(stock.quantity),
+            profit: (parseFloat(stock.salePrice) - parseFloat(stock.purchasePrice)) * parseFloat(stock.quantity),
+            profitMargin: (((parseFloat(stock.salePrice) - parseFloat(stock.purchasePrice)) / parseFloat(stock.purchasePrice)) * 100).toFixed(2)
         }));
+
+        const pageNum = parseInt(page);
+        const limitNum = parseInt(limit);
+        const totalPages = Math.ceil(count / limitNum);
 
         res.status(200).json({
             success: true,
             message: 'Stock retrieved successfully',
-            count: stocks.length,
-            data: stocksWithDetails
+            count: count,
+            data: stocksWithDetails,
+            pagination: {
+                currentPage: pageNum,
+                totalPages: totalPages,
+                totalItems: count,
+                itemsPerPage: limitNum,
+                hasNextPage: pageNum < totalPages,
+                hasPrevPage: pageNum > 1
+            }
         });
     } catch (error) {
         res.status(500).json({
@@ -113,10 +246,26 @@ exports.getStockByProduct = async (req, res) => {
 
         const stock = await Stock.findAll({
             where: { ProductId },
-            include: [{ 
-                model: Product, 
-                attributes: ['id', 'name', 'category', 'costPrice', 'marginPercent'] 
-            }],
+            include: [
+                { 
+                    model: Product, 
+                    attributes: ['id', 'name', 'CategoryId', 'costPrice', 'marginPercent'],
+                    include: [{
+                        model: Category,
+                        attributes: ['id', 'name']
+                    }]
+                },
+                {
+                    model: Vendor,
+                    attributes: ['id', 'name', 'companyName'],
+                    required: false
+                },
+                {
+                    model: Purchase,
+                    attributes: ['id', 'invoiceNumber'],
+                    required: false
+                }
+            ],
             order: [['createdAt', 'DESC']]
         });
 
@@ -130,6 +279,7 @@ exports.getStockByProduct = async (req, res) => {
         // Add calculated fields
         const stockWithDetails = stock.map(s => ({
             ...s.toJSON(),
+            vendorName: s.Vendor ? s.Vendor.name : 'Not assigned',
             costValue: s.purchasePrice * s.quantity,
             saleValue: s.salePrice * s.quantity,
             profit: (s.salePrice - s.purchasePrice) * s.quantity,
@@ -194,10 +344,26 @@ exports.updateStock = async (req, res) => {
         });
 
         const updatedStock = await Stock.findByPk(id, {
-            include: [{ 
-                model: Product, 
-                attributes: ['id', 'name', 'category', 'costPrice', 'marginPercent'] 
-            }]
+            include: [
+                { 
+                    model: Product, 
+                    attributes: ['id', 'name', 'CategoryId', 'costPrice', 'marginPercent'],
+                    include: [{
+                        model: Category,
+                        attributes: ['id', 'name']
+                    }]
+                },
+                {
+                    model: Vendor,
+                    attributes: ['id', 'name', 'companyName'],
+                    required: false
+                },
+                {
+                    model: Purchase,
+                    attributes: ['id', 'invoiceNumber'],
+                    required: false
+                }
+            ]
         });
 
         res.status(200).json({
@@ -247,10 +413,21 @@ exports.decreaseStockQuantity = async (req, res) => {
         await stock.save();
 
         const updatedStock = await Stock.findByPk(id, {
-            include: [{ 
-                model: Product, 
-                attributes: ['id', 'name', 'category'] 
-            }]
+            include: [
+                { 
+                    model: Product, 
+                    attributes: ['id', 'name', 'CategoryId'],
+                    include: [{
+                        model: Category,
+                        attributes: ['id', 'name']
+                    }] 
+                },
+                {
+                    model: Vendor,
+                    attributes: ['id', 'name', 'companyName'],
+                    required: false
+                }
+            ]
         });
 
         res.status(200).json({
@@ -271,10 +448,26 @@ exports.decreaseStockQuantity = async (req, res) => {
 exports.getStockSummary = async (req, res) => {
     try {
         const stocks = await Stock.findAll({
-            include: [{ 
-                model: Product, 
-                attributes: ['id', 'name', 'category', 'costPrice', 'marginPercent'] 
-            }],
+            include: [
+                { 
+                    model: Product, 
+                    attributes: ['id', 'name', 'CategoryId', 'costPrice', 'marginPercent'],
+                    include: [{
+                        model: Category,
+                        attributes: ['id', 'name']
+                    }]
+                },
+                {
+                    model: Vendor,
+                    attributes: ['id', 'name', 'companyName'],
+                    required: false
+                },
+                {
+                    model: Purchase,
+                    attributes: ['id', 'invoiceNumber'],
+                    required: false
+                }
+            ],
             order: [['createdAt', 'DESC']]
         });
 
@@ -288,7 +481,11 @@ exports.getStockSummary = async (req, res) => {
                 id: stock.id,
                 productId: stock.productId,
                 productName: stock.Product.name,
-                productCategory: stock.Product.category,
+                productCategory: stock.Product.Category ? stock.Product.Category.name : 'N/A',
+                vendorId: stock.VendorId,
+                vendorName: stock.Vendor ? stock.Vendor.name : 'Not assigned',
+                batchNumber: stock.batchNumber,
+                expiryDate: stock.expiryDate,
                 purchasePrice: stock.purchasePrice,
                 salePrice: stock.salePrice,
                 quantity: stock.quantity,

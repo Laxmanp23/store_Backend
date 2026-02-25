@@ -17,5 +17,11 @@ module.exports = (sequelize, DataTypes) => {
     address: {
       type: DataTypes.TEXT
     }
+  }, {
+    indexes: [
+      { fields: ['mobile'], unique: true },
+      { fields: ['name'] },
+      { fields: ['createdAt'] }
+    ]
   });
 };

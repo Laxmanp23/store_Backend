@@ -35,6 +35,13 @@ module.exports = (sequelize, DataTypes) => {
     remark: {
       type: DataTypes.STRING
     }
+  }, {
+    indexes: [
+      { fields: ['saleId'] },
+      { fields: ['CustomerId'] },
+      { fields: ['paymentDate'] },
+      { fields: ['paymentMode'] }
+    ]
   });
 
   return Payment;
