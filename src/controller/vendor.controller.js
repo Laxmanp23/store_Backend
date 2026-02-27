@@ -292,21 +292,22 @@ exports.createPurchase = async (req, res) => {
                 totalPrice: item.quantity * item.unitPrice
             }, { transaction });
 
-            // Update stock - add quantity
-            const existingStock = await Stock.findOne({
-                where: { ProductId: item.ProductId }
-            });
+            // Get product info for unit
+            const product = await Product.findByPk(item.ProductId);
+            const unit = item.unit || product?.primaryUnit || 'PCS';
 
-            if (existingStock) {
-                await existingStock.update({
-                    quantity: parseFloat(existingStock.quantity) + parseFloat(item.quantity)
-                }, { transaction });
-            } else {
-                await Stock.create({
-                    ProductId: item.ProductId,
-                    quantity: item.quantity
-                }, { transaction });
-            }
+            // Create NEW stock batch for this purchase (proper tracking)
+            await Stock.create({
+                ProductId: item.ProductId,
+                VendorId: VendorId,
+                PurchaseId: purchase.id,
+                purchasePrice: parseFloat(item.unitPrice),
+                salePrice: parseFloat(item.salePrice) || parseFloat(item.unitPrice) * 1.1,
+                originalQuantity: parseFloat(item.quantity),
+                quantity: parseFloat(item.quantity),
+                unit: unit,
+                batchNumber: invoiceNumber || `PUR-${purchase.id}`
+            }, { transaction });
         }
 
         await transaction.commit();
@@ -530,9 +531,61 @@ exports.getVendorLedger = async (req, res) => {
             order: [['purchaseDate', 'ASC']]
         });
 
+        // Get all direct stock entries for vendor (without Purchase)
+        const directStocks = await Stock.findAll({
+            where: { 
+                VendorId: vendorId,
+                PurchaseId: null // Only direct stock entries
+            },
+            include: [{ model: Product, attributes: ['id', 'name', 'variant', 'variantGroup'] }],
+            order: [['createdAt', 'ASC']]
+        });
+
         // Build ledger with proper entries
         const ledger = [];
         let runningBalance = 0;
+
+        // Add direct stock entries (these are credit entries - we owe vendor)
+        for (const stock of directStocks) {
+            const stockValue = parseFloat(stock.purchasePrice) * parseFloat(stock.originalQuantity);
+            const paidAmount = parseFloat(stock.paidAmount || 0);
+            const dueAmount = stockValue - paidAmount;
+            runningBalance += dueAmount; // Only add unpaid amount to balance
+            
+            const productName = stock.Product ? 
+                (stock.Product.name + (stock.Product.variant ? ` (${stock.Product.variant})` : '')) : 
+                'Unknown Product';
+            
+            // Add stock entry (Credit - we owe vendor)
+            ledger.push({
+                date: stock.createdAt,
+                referenceId: `STK-${stock.id}`,
+                stockId: stock.id,
+                type: 'STOCK',
+                description: `Stock: ${productName} - ${stock.originalQuantity} ${stock.unit || 'PCS'} @ ₹${stock.purchasePrice}`,
+                debit: 0,
+                credit: stockValue,
+                balance: runningBalance,
+                totalAmount: stockValue,
+                totalPaid: paidAmount,
+                dueAmount: dueAmount,
+                paymentStatus: stock.paymentStatus || 'UNPAID'
+            });
+
+            // Add payment entry if any payment was made
+            if (paidAmount > 0) {
+                ledger.push({
+                    date: stock.lastPaymentDate || stock.updatedAt,
+                    referenceId: `STPAY-${stock.id}`,
+                    stockId: stock.id,
+                    type: 'PAYMENT',
+                    description: `${stock.paymentMode || 'CASH'} - Payment for STK-${stock.id}`,
+                    debit: paidAmount,
+                    credit: 0,
+                    balance: runningBalance
+                });
+            }
+        }
 
         for (const purchase of purchases) {
             // Add purchase entry (Credit - we owe money to vendor)
@@ -577,9 +630,13 @@ exports.getVendorLedger = async (req, res) => {
             entry.balance = balance;
         });
 
-        // Summary
-        const totalPurchases = purchases.reduce((sum, p) => sum + parseFloat(p.totalAmount), 0);
-        const totalPaid = purchases.reduce((sum, p) => sum + parseFloat(p.paidAmount), 0);
+        // Summary - include both purchases and direct stock entries
+        const totalFromPurchases = purchases.reduce((sum, p) => sum + parseFloat(p.totalAmount), 0);
+        const totalFromDirectStock = directStocks.reduce((sum, s) => sum + (parseFloat(s.purchasePrice) * parseFloat(s.originalQuantity)), 0);
+        const totalPurchases = totalFromPurchases + totalFromDirectStock;
+        const paidForPurchases = purchases.reduce((sum, p) => sum + parseFloat(p.paidAmount), 0);
+        const paidForStock = directStocks.reduce((sum, s) => sum + parseFloat(s.paidAmount || 0), 0);
+        const totalPaid = paidForPurchases + paidForStock;
         const totalOutstanding = totalPurchases - totalPaid;
 
         res.status(200).json({
@@ -597,7 +654,8 @@ exports.getVendorLedger = async (req, res) => {
                 totalPurchases,
                 totalPaid,
                 totalOutstanding,
-                invoiceCount: purchases.length
+                invoiceCount: purchases.length,
+                directStockCount: directStocks.length
             },
             data: ledger
         });
@@ -605,6 +663,67 @@ exports.getVendorLedger = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error fetching vendor ledger',
+            error: error.message
+        });
+    }
+};
+
+// Update stock payment (for direct stock entries)
+exports.updateStockPayment = async (req, res) => {
+    try {
+        const { stockId } = req.params;
+        const { paidAmount, paymentMode } = req.body;
+
+        // Find the stock entry
+        const stock = await Stock.findByPk(stockId, {
+            include: [
+                { model: Product, attributes: ['id', 'name', 'variant'] },
+                { model: Vendor, attributes: ['id', 'name', 'companyName'] }
+            ]
+        });
+
+        if (!stock) {
+            return res.status(404).json({
+                success: false,
+                message: 'Stock entry not found'
+            });
+        }
+
+        // Calculate stock value
+        const stockValue = parseFloat(stock.purchasePrice) * parseFloat(stock.originalQuantity);
+        const currentPaid = parseFloat(stock.paidAmount || 0);
+        const newPaid = currentPaid + parseFloat(paidAmount);
+        
+        if (newPaid > stockValue) {
+            return res.status(400).json({
+                success: false,
+                message: 'Payment amount exceeds stock value'
+            });
+        }
+
+        // Update stock with payment info
+        await stock.update({
+            paidAmount: newPaid,
+            paymentStatus: newPaid >= stockValue ? 'PAID' : 'PARTIAL',
+            paymentMode: paymentMode || 'CASH',
+            lastPaymentDate: new Date()
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Stock payment recorded successfully',
+            data: {
+                stockId: stock.id,
+                stockValue,
+                totalPaid: newPaid,
+                dueAmount: stockValue - newPaid,
+                paymentStatus: stock.paymentStatus
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error updating stock payment',
             error: error.message
         });
     }

@@ -4,7 +4,7 @@ const { Product, Stock, Vendor, ProductVendor, Category } = require('../model');
 //add product
 exports.addProduct = async (req, res) => {
     try {
-        const { name, CategoryId, sku, description, primaryUnit, costPrice, marginPercent, imageUrl } = req.body;
+        const { name, CategoryId, sku, description, primaryUnit, costPrice, marginPercent, imageUrl, variant, variantGroup } = req.body;
 
         // Validation - check required fields
         if (!name || !CategoryId) {
@@ -68,7 +68,9 @@ exports.addProduct = async (req, res) => {
             costPrice: costPrice ? parseFloat(costPrice) : null,
             marginPercent: marginPercent ? parseFloat(marginPercent) : null,
             imageUrl: imageUrl || null,
-            isActive: true
+            isActive: true,
+            variant: variant ? variant.trim() : null,
+            variantGroup: variantGroup ? variantGroup.trim() : null
         });
 
         res.status(201).json({
@@ -110,7 +112,7 @@ exports.getAllProducts = async (req, res) => {
         // If all=true, return all products for dropdowns
         if (all === 'true' || all === true) {
             const products = await Product.findAll({
-                attributes: ['id', 'name', 'sku', 'CategoryId', 'primaryUnit', 'costPrice', 'marginPercent'],
+                attributes: ['id', 'name', 'sku', 'CategoryId', 'primaryUnit', 'costPrice', 'marginPercent', 'variant', 'variantGroup'],
                 where: { isActive: true },
                 include: [{ model: Category, attributes: ['id', 'name'] }],
                 order: [['name', 'ASC']]
@@ -123,7 +125,7 @@ exports.getAllProducts = async (req, res) => {
         }
 
         const { count, rows: products } = await Product.findAndCountAll({
-            attributes: ['id', 'name', 'sku', 'CategoryId', 'description', 'primaryUnit', 'costPrice', 'marginPercent', 'imageUrl', 'isActive', 'createdAt', 'updatedAt'],
+            attributes: ['id', 'name', 'sku', 'CategoryId', 'description', 'primaryUnit', 'costPrice', 'marginPercent', 'imageUrl', 'isActive', 'variant', 'variantGroup', 'createdAt', 'updatedAt'],
             where: whereClause,
             include: [{
                 model: Category,
@@ -246,7 +248,7 @@ exports.getProductById = async (req, res) => {
 exports.updateProduct = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, CategoryId, sku, description, primaryUnit, costPrice, marginPercent, imageUrl, isActive } = req.body;
+        const { name, CategoryId, sku, description, primaryUnit, costPrice, marginPercent, imageUrl, isActive, variant, variantGroup } = req.body;
 
         const product = await Product.findByPk(id);
         if (!product) {
@@ -315,7 +317,9 @@ exports.updateProduct = async (req, res) => {
             costPrice: costPrice ? parseFloat(costPrice) : product.costPrice,
             marginPercent: marginPercent !== undefined ? parseFloat(marginPercent) : product.marginPercent,
             imageUrl: imageUrl !== undefined ? imageUrl : product.imageUrl,
-            isActive: isActive !== undefined ? isActive : product.isActive
+            isActive: isActive !== undefined ? isActive : product.isActive,
+            variant: variant !== undefined ? (variant ? variant.trim() : null) : product.variant,
+            variantGroup: variantGroup !== undefined ? (variantGroup ? variantGroup.trim() : null) : product.variantGroup
         });
 
         res.status(200).json({

@@ -65,8 +65,8 @@ app.use("/api/settings", settingsRoutes);
 // Notification routes
 app.use("/api/notification", notificationRoutes);
 
-// Krishi Kendra columns added - alter can stay false now
-sequelize.sync({ force: false, alter: false })
+// Variant columns added - alter: true to add new columns
+sequelize.sync({ force: false, alter: true })
     .then(async () => {
         // Initialize default categories
         // await initializeCategories();

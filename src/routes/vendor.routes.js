@@ -40,4 +40,7 @@ router.get('/summary/:vendorId', vendorController.getVendorPurchaseSummary);
 // Get vendor payment ledger
 router.get('/ledger/:vendorId', vendorController.getVendorLedger);
 
+// Pay for stock entry
+router.put('/stock/payment/:stockId', vendorController.updateStockPayment);
+
 module.exports = router;

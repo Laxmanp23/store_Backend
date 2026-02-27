@@ -66,6 +66,28 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING(100),
       allowNull: true,
       comment: "Manufacturer/Company name"
+    },
+    paidAmount: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0,
+      allowNull: false,
+      comment: "Amount paid to vendor for this stock"
+    },
+    paymentStatus: {
+      type: DataTypes.ENUM('UNPAID', 'PARTIAL', 'PAID'),
+      defaultValue: 'UNPAID',
+      allowNull: false,
+      comment: "Payment status for this stock batch"
+    },
+    paymentMode: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      comment: "Payment mode: CASH, UPI, BANK, etc."
+    },
+    lastPaymentDate: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "Date of last payment"
     }
   }, {
     indexes: [

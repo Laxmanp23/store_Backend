@@ -78,7 +78,7 @@ exports.addStock = async (req, res) => {
             include: [
                 { 
                     model: Product, 
-                    attributes: ['id', 'name', 'CategoryId', 'costPrice', 'marginPercent'],
+                    attributes: ['id', 'name', 'CategoryId', 'costPrice', 'marginPercent', 'variant', 'variantGroup', 'primaryUnit'],
                     include: [{
                         model: Category,
                         attributes: ['id', 'name']
@@ -132,7 +132,7 @@ exports.getAllStock = async (req, res) => {
                 include: [
                     { 
                         model: Product, 
-                        attributes: ['id', 'name', 'CategoryId', 'costPrice', 'marginPercent'],
+                        attributes: ['id', 'name', 'CategoryId', 'costPrice', 'marginPercent', 'variant', 'variantGroup', 'primaryUnit'],
                         include: [{
                             model: Category,
                             attributes: ['id', 'name']
@@ -168,7 +168,7 @@ exports.getAllStock = async (req, res) => {
             include: [
                 { 
                     model: Product, 
-                    attributes: ['id', 'name', 'CategoryId', 'costPrice', 'marginPercent'],
+                    attributes: ['id', 'name', 'CategoryId', 'costPrice', 'marginPercent', 'variant', 'variantGroup', 'primaryUnit'],
                     include: [{
                         model: Category,
                         attributes: ['id', 'name']

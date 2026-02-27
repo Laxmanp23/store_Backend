@@ -68,13 +68,26 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
       comment: "Is product active for selling"
+    },
+    // ========== VARIANTS (e.g., 250ml, 750ml, 1L) ==========
+    variantGroup: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      comment: "Group name for variants (e.g., Fosmite)"
+    },
+    variant: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      comment: "Variant name (e.g., 250ml, 750ml, 1L, Small, Medium)"
     }
   }, {
     indexes: [
       { fields: ['name'] },
       { fields: ['sku'], unique: true },
       { fields: ['CategoryId'] },
-      { fields: ['isActive'] }
+      { fields: ['isActive'] },
+      { fields: ['variantGroup'] },
+      { fields: ['variant'] }
     ]
   });
 };
